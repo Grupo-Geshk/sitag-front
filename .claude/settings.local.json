@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(cat:*)",
+      "Bash(findstr:*)",
+      "Bash(npm run build:*)",
+      "Bash(dotnet ef migrations:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet ef database update:*)",
+      "Bash(dotnet ef dbcontext scaffold:*)",
+      "Bash(dir /s /b *.tsx)",
+      "Bash(dir:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "shadcn"
+  ]
+}
