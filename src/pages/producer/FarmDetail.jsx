@@ -8,14 +8,12 @@ import EventModal from '../../components/producer/EventModal';
 import MovimientoModal from '../../components/producer/MovimientoModal';
 import AnimalModal from '../../components/producer/AnimalModal';
 import ExpenseModal from '../../components/producer/ExpenseModal';
-import FarmBrandModal from '../../components/producer/FarmBrandModal';
 import { farmsAPI } from '../../api/farms';
 import { divisionsAPI } from '../../api/divisions';
 import { animalsAPI } from '../../api/animals';
 import { movementsAPI } from '../../api/movements';
 import { animalEventsAPI } from '../../api/animalEvents';
 import { economyAPI } from '../../api/transactions';
-import { brandsAPI } from '../../api/brands';
 import { resolveEventDisplay } from '../../lib/eventRegistry';
 import toast from 'react-hot-toast';
 
@@ -58,14 +56,10 @@ export default function FarmDetail() {
   const [showMovimientoModal, setShowMovimientoModal] = useState(false);
   const [showAnimalModal, setShowAnimalModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
-  const [brands, setBrands] = useState([]);
-  const [showBrandModal, setShowBrandModal] = useState(false);
-  const [editingBrand, setEditingBrand] = useState(null);
 
   useEffect(() => {
     fetchFarmDetail();
     fetchAllData();
-    fetchBrands();
   }, [farmId]);
 
   const fetchFarmDetail = async () => {
@@ -145,26 +139,6 @@ export default function FarmDetail() {
       fetchFarmDetail();
     } catch {
       toast.error('Error al actualizar el nombre');
-    }
-  };
-
-  const fetchBrands = async () => {
-    try {
-      const data = await brandsAPI.getByFarm(farmId);
-      setBrands(Array.isArray(data) ? data : []);
-    } catch {
-      // silent — non-critical
-    }
-  };
-
-  const handleDeleteBrand = async (brandId) => {
-    if (!window.confirm('¿Eliminar este hierro? Los animales asignados perderán la referencia.')) return;
-    try {
-      await brandsAPI.delete(farmId, brandId);
-      toast.success('Hierro eliminado');
-      fetchBrands();
-    } catch {
-      toast.error('Error al eliminar el hierro');
     }
   };
 
@@ -301,13 +275,6 @@ export default function FarmDetail() {
           onExpenseCreated={() => { setShowExpenseModal(false); fetchAllData(); }}
         />
       )}
-      <FarmBrandModal
-        isOpen={showBrandModal}
-        onClose={() => { setShowBrandModal(false); setEditingBrand(null); }}
-        farmId={farmId}
-        brand={editingBrand}
-        onSaved={() => { setShowBrandModal(false); setEditingBrand(null); fetchBrands(); }}
-      />
 
       <div className="max-w-6xl mx-auto space-y-4">
 
@@ -681,79 +648,7 @@ export default function FarmDetail() {
           </div>
         </div>
 
-        {/* ── 6. Hierros ────────────────────────────────────────────────────── */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Hierros ({brands.length})</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Marcas registradas de esta finca</p>
-            </div>
-            <button
-              onClick={() => { setEditingBrand(null); setShowBrandModal(true); }}
-              className="text-xs font-medium flex items-center gap-1 hover:underline"
-              style={{ color: '#3FA79F' }}
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Agregar
-            </button>
-          </div>
-
-          {brands.length === 0 ? (
-            <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-100">
-              <p className="text-sm text-gray-500 mb-2">Sin hierros registrados</p>
-              <button
-                onClick={() => { setEditingBrand(null); setShowBrandModal(true); }}
-                className="text-xs font-medium hover:underline"
-                style={{ color: '#3FA79F' }}
-              >
-                Registrar primer hierro
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {brands.map(b => (
-                <div key={b.id} className="group relative border border-gray-200 rounded-lg overflow-hidden hover:border-gray-300 transition-colors">
-                  {b.photoUrl ? (
-                    <div className="h-20 bg-gray-50 flex items-center justify-center">
-                      <img src={b.photoUrl} alt={b.name} className="h-full w-full object-contain p-1" onError={e => { e.target.style.display = 'none'; }} />
-                    </div>
-                  ) : (
-                    <div className="h-20 bg-amber-50 flex items-center justify-center">
-                      <svg className="w-8 h-8 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
-                      </svg>
-                    </div>
-                  )}
-                  <div className="p-2">
-                    <p className="text-xs font-medium text-gray-800 truncate">{b.name}</p>
-                  </div>
-                  <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => { setEditingBrand(b); setShowBrandModal(true); }}
-                      className="p-1 bg-white rounded shadow-sm text-gray-400 hover:text-gray-700"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleDeleteBrand(b.id)}
-                      className="p-1 bg-white rounded shadow-sm text-gray-400 hover:text-red-600"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ── 7. Unified Timeline ────────────────────────────────────────────── */}
+        {/* ── 6. Unified Timeline ────────────────────────────────────────────── */}
         {(() => {
           const PAGE_SIZE = 6;
           const totalPages = Math.max(1, Math.ceil(timeline.length / PAGE_SIZE));
