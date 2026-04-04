@@ -2,41 +2,42 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { brandsAPI } from '../../api/brands';
 import Modal from '../common/Modal';
+import PhotoUploadField from './PhotoUploadField';
 
-export default function FarmBrandModal({ isOpen, onClose, farmId, brand, onSaved }) {
+export default function FarmBrandModal({ isOpen, onClose, brand, onSaved }) {
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({ name: '', photoUrl: '' });
+  const [name, setName] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
 
   const isEditMode = !!brand;
 
   useEffect(() => {
     if (brand) {
-      setFormData({ name: brand.name || '', photoUrl: brand.photoUrl || '' });
+      setName(brand.name || '');
+      setPhotoUrl(brand.photoUrl || '');
     } else {
-      setFormData({ name: '', photoUrl: '' });
+      setName('');
+      setPhotoUrl('');
     }
   }, [brand, isOpen]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!name.trim()) { toast.error('El nombre es requerido'); return; }
     setLoading(true);
     try {
-      const payload = {
-        name: formData.name,
-        photoUrl: formData.photoUrl || null,
-      };
+      const payload = { name: name.trim(), photoUrl: photoUrl || null };
       if (isEditMode) {
-        await brandsAPI.update(farmId, brand.id, payload);
+        await brandsAPI.update(brand.id, payload);
         toast.success('Hierro actualizado');
       } else {
-        await brandsAPI.create(farmId, payload);
+        await brandsAPI.create(payload);
         toast.success('Hierro registrado');
       }
       onSaved();
       onClose();
     } catch (err) {
-      const msg = err.response?.data?.message || (isEditMode ? 'Error al actualizar' : 'Error al crear');
-      toast.error(msg);
+      toast.error(err.response?.data?.message || (isEditMode ? 'Error al actualizar' : 'Error al crear'));
     } finally {
       setLoading(false);
     }
@@ -62,7 +63,7 @@ export default function FarmBrandModal({ isOpen, onClose, farmId, brand, onSaved
             type="submit"
             form="brand-form"
             disabled={loading}
-            className="flex-1 px-4 py-2.5 text-white rounded-lg transition-colors font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+            className="flex-1 px-4 py-2.5 text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-2"
             style={{ backgroundColor: '#3FA79F' }}
           >
             {loading ? (
@@ -83,8 +84,8 @@ export default function FarmBrandModal({ isOpen, onClose, farmId, brand, onSaved
           <label className="block text-sm font-medium text-gray-800">Nombre de referencia *</label>
           <input
             type="text"
-            value={formData.name}
-            onChange={e => setFormData(f => ({ ...f, name: e.target.value }))}
+            value={name}
+            onChange={e => setName(e.target.value)}
             required
             disabled={loading}
             placeholder="Ej: Hierro Principal, Marca Norte"
@@ -95,33 +96,12 @@ export default function FarmBrandModal({ isOpen, onClose, farmId, brand, onSaved
         </div>
 
         <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-gray-800">Foto del hierro (URL)</label>
-          <input
-            type="url"
-            value={formData.photoUrl}
-            onChange={e => setFormData(f => ({ ...f, photoUrl: e.target.value }))}
+          <label className="block text-sm font-medium text-gray-800">Foto del hierro</label>
+          <PhotoUploadField
+            value={photoUrl}
+            onChange={setPhotoUrl}
             disabled={loading}
-            placeholder="https://i.ibb.co/..."
-            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none text-sm disabled:opacity-50"
-            onFocus={e => e.target.style.borderColor = '#3FA79F'}
-            onBlur={e => e.target.style.borderColor = '#D1D5DB'}
           />
-          <p className="text-xs text-gray-400">Sube la foto a imgbb.com y pega el enlace directo aquí</p>
-        </div>
-
-        {formData.photoUrl && (
-          <div className="rounded-lg overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center h-32">
-            <img
-              src={formData.photoUrl}
-              alt="Vista previa"
-              className="h-full object-contain"
-              onError={e => { e.target.style.display = 'none'; }}
-            />
-          </div>
-        )}
-
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-          Los hierros son marcas de identificación que se aplican en la piel del animal durante la faena de hierra. Cada finca puede tener varios hierros registrados.
         </div>
       </form>
     </Modal>

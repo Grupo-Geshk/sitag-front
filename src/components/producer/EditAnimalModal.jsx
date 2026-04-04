@@ -58,9 +58,7 @@ export default function EditAnimalModal({ isOpen, onClose, animal, onSaved }) {
     });
     setSelectedBrandId(animal.brandId || '');
     setBrandedAt(animal.brandedAt ? String(animal.brandedAt).slice(0, 10) : '');
-    if (animal.farmId) {
-      brandsAPI.getByFarm(animal.farmId).then(data => setFarmBrands(Array.isArray(data) ? data : [])).catch(() => {});
-    }
+    brandsAPI.getAll().then(data => setFarmBrands(Array.isArray(data) ? data : [])).catch(() => {});
   }, [isOpen, animal]);
 
   if (!isOpen || !animal) return null;

@@ -4,10 +4,9 @@ import { format, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ProducerLayout from '../../components/layout/ProducerLayout';
 import FarmBrandModal from '../../components/producer/FarmBrandModal';
-import { getUserData, getTenantPlan, getProducerId } from '../../lib/auth';
+import { getUserData, getTenantPlan } from '../../lib/auth';
 import { authAPI } from '../../api/auth';
 import { animalsAPI } from '../../api/animals';
-import { farmsAPI } from '../../api/farms';
 import { brandsAPI } from '../../api/brands';
 import toast from 'react-hot-toast';
 import {
@@ -88,12 +87,10 @@ export default function Perfil() {
   const lockedPlans         = PLAN_ORDER.slice(currentPlanIdx + 1);
 
   // ── Hierros ──────────────────────────────────────────────────────────────
-  const [farms, setFarms]               = useState([]);
-  const [brandsByFarm, setBrandsByFarm] = useState({});   // { farmId: FarmBrandDto[] }
+  const [brands, setBrands]             = useState([]);
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [editingBrand, setEditingBrand] = useState(null);
-  const [brandFarmId, setBrandFarmId]   = useState(null); // farm context for modal
 
   // ── Deceased animals ─────────────────────────────────────────────────────
   const [deceased, setDeceased]         = useState([]);
@@ -119,14 +116,8 @@ export default function Perfil() {
   const fetchHierros = async () => {
     setBrandsLoading(true);
     try {
-      const producerId = getProducerId();
-      const farmsData = await farmsAPI.getAllFarms(producerId);
-      const list = Array.isArray(farmsData) ? farmsData : [];
-      setFarms(list);
-      const results = await Promise.all(list.map(f => brandsAPI.getByFarm(f.id).catch(() => [])));
-      const map = {};
-      list.forEach((f, i) => { map[f.id] = Array.isArray(results[i]) ? results[i] : []; });
-      setBrandsByFarm(map);
+      const data = await brandsAPI.getAll();
+      setBrands(Array.isArray(data) ? data : []);
     } catch {
       // silent
     } finally {
@@ -134,10 +125,10 @@ export default function Perfil() {
     }
   };
 
-  const handleDeleteBrand = async (farmId, brandId) => {
+  const handleDeleteBrand = async (brandId) => {
     if (!window.confirm('¿Eliminar este hierro?')) return;
     try {
-      await brandsAPI.delete(farmId, brandId);
+      await brandsAPI.delete(brandId);
       toast.success('Hierro eliminado');
       fetchHierros();
     } catch {
@@ -345,84 +336,75 @@ export default function Perfil() {
 
         {/* ── Hierros ─────────────────────────────────────────────────────── */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
-            <p className="text-sm font-semibold text-gray-900">Hierros</p>
-            <p className="text-xs text-gray-400 mt-0.5">Marcas registradas por finca</p>
+          <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid #f1f5f9' }}>
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Hierros</p>
+              <p className="text-xs text-gray-400 mt-0.5">Marcas de tu ganadería</p>
+            </div>
+            <button
+              onClick={() => { setEditingBrand(null); setShowBrandModal(true); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white rounded-lg transition-colors"
+              style={{ backgroundColor: '#3FA79F' }}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Agregar
+            </button>
           </div>
 
           {brandsLoading ? (
-            <div className="px-6 py-6 space-y-2">
-              {[1, 2].map(i => <div key={i} className="h-10 bg-gray-50 rounded-lg animate-pulse" />)}
+            <div className="px-6 py-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-50 rounded-lg animate-pulse" />)}
             </div>
-          ) : farms.length === 0 ? (
-            <div className="px-6 py-8 text-center">
-              <p className="text-sm text-gray-400">No tienes fincas registradas</p>
+          ) : brands.length === 0 ? (
+            <div className="px-6 py-10 text-center">
+              <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                <svg className="w-6 h-6 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
+                </svg>
+              </div>
+              <p className="text-sm text-gray-500 mb-1">Sin hierros registrados</p>
+              <p className="text-xs text-gray-400">Registra los hierros de tu ganadería para asignarlos a los animales</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-50">
-              {farms.map(farm => {
-                const brands = brandsByFarm[farm.id] ?? [];
-                return (
-                  <div key={farm.id} className="px-6 py-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{farm.name}</p>
-                      <button
-                        onClick={() => { setBrandFarmId(farm.id); setEditingBrand(null); setShowBrandModal(true); }}
-                        className="text-xs font-medium flex items-center gap-1 hover:underline"
-                        style={{ color: '#3FA79F' }}
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                        </svg>
-                        Agregar
-                      </button>
+            <div className="px-6 py-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {brands.map(b => (
+                <div key={b.id} className="group relative border border-gray-200 rounded-lg overflow-hidden hover:border-gray-300 transition-colors">
+                  {b.photoUrl ? (
+                    <div className="h-20 bg-gray-50 flex items-center justify-center">
+                      <img src={b.photoUrl} alt={b.name} className="h-full w-full object-contain p-1" onError={e => { e.target.style.display = 'none'; }} />
                     </div>
-
-                    {brands.length === 0 ? (
-                      <p className="text-xs text-gray-400 py-2">Sin hierros en esta finca</p>
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {brands.map(b => (
-                          <div key={b.id} className="group relative border border-gray-200 rounded-lg overflow-hidden hover:border-gray-300 transition-colors">
-                            {b.photoUrl ? (
-                              <div className="h-16 bg-gray-50 flex items-center justify-center">
-                                <img src={b.photoUrl} alt={b.name} className="h-full w-full object-contain p-1" onError={e => { e.target.style.display = 'none'; }} />
-                              </div>
-                            ) : (
-                              <div className="h-16 bg-amber-50 flex items-center justify-center">
-                                <svg className="w-7 h-7 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
-                                </svg>
-                              </div>
-                            )}
-                            <div className="px-2 py-1.5">
-                              <p className="text-xs font-medium text-gray-800 truncate">{b.name}</p>
-                            </div>
-                            <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={() => { setBrandFarmId(farm.id); setEditingBrand(b); setShowBrandModal(true); }}
-                                className="p-1 bg-white rounded shadow-sm text-gray-400 hover:text-gray-700"
-                              >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                </svg>
-                              </button>
-                              <button
-                                onClick={() => handleDeleteBrand(farm.id, b.id)}
-                                className="p-1 bg-white rounded shadow-sm text-gray-400 hover:text-red-600"
-                              >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                  ) : (
+                    <div className="h-20 bg-amber-50 flex items-center justify-center">
+                      <svg className="w-8 h-8 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
+                      </svg>
+                    </div>
+                  )}
+                  <div className="px-2 py-1.5">
+                    <p className="text-xs font-medium text-gray-800 truncate">{b.name}</p>
                   </div>
-                );
-              })}
+                  <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => { setEditingBrand(b); setShowBrandModal(true); }}
+                      className="p-1 bg-white rounded shadow-sm text-gray-400 hover:text-gray-700"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteBrand(b.id)}
+                      className="p-1 bg-white rounded shadow-sm text-gray-400 hover:text-red-600"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -553,10 +535,9 @@ export default function Perfil() {
       </div>
       <FarmBrandModal
         isOpen={showBrandModal}
-        onClose={() => { setShowBrandModal(false); setEditingBrand(null); setBrandFarmId(null); }}
-        farmId={brandFarmId}
+        onClose={() => { setShowBrandModal(false); setEditingBrand(null); }}
         brand={editingBrand}
-        onSaved={() => { setShowBrandModal(false); setEditingBrand(null); setBrandFarmId(null); fetchHierros(); }}
+        onSaved={() => { setShowBrandModal(false); setEditingBrand(null); fetchHierros(); }}
       />
     </ProducerLayout>
   );

@@ -1,22 +1,22 @@
 import apiClient from './client';
 
 export const brandsAPI = {
-  getByFarm: async (farmId) => {
-    const response = await apiClient.get(`/farms/${farmId}/hierros`);
+  getAll: async () => {
+    const response = await apiClient.get('/hierros');
     return response.data;
   },
 
-  create: async (farmId, data) => {
-    const response = await apiClient.post(`/farms/${farmId}/hierros`, data);
+  create: async (data) => {
+    const response = await apiClient.post('/hierros', data);
     return response.data;
   },
 
-  update: async (farmId, brandId, data) => {
-    const response = await apiClient.put(`/farms/${farmId}/hierros/${brandId}`, data);
+  update: async (id, data) => {
+    const response = await apiClient.put(`/hierros/${id}`, data);
     return response.data;
   },
 
-  delete: async (farmId, brandId) => {
-    await apiClient.delete(`/farms/${farmId}/hierros/${brandId}`);
+  delete: async (id) => {
+    await apiClient.delete(`/hierros/${id}`);
   },
 };

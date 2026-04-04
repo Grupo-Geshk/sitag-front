@@ -307,8 +307,8 @@ export default function ServiceModal({
       return;
     }
     if (supplyConsumingTypes.includes(tipo) || tipo === 'Herrado') {
-      if (tipo === 'Herrado' && selectedFarmId) {
-        brandsAPI.getByFarm(selectedFarmId).then(data => setFarmBrands(Array.isArray(data) ? data : [])).catch(() => {});
+      if (tipo === 'Herrado') {
+        brandsAPI.getAll().then(data => setFarmBrands(Array.isArray(data) ? data : [])).catch(() => {});
       }
       setStep(3);
     } else {
