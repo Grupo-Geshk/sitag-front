@@ -469,7 +469,7 @@ export default function ServiceModal({
           const sub = MED_SUBTYPES.find(s => s.value === medType);
           const serviceData = {
             serviceType: sub.serviceType,
-            scheduledDate: new Date(serviceDate).toISOString(),
+            scheduledDate: new Date(serviceDate + 'T12:00:00').toISOString(),
             notes: descripcion ? `${sub.label}: ${descripcion}` : sub.label,
             farmId: selectedFarmId,
             divisionId: selectedDivisionId || null,
@@ -500,7 +500,7 @@ export default function ServiceModal({
       // === Single-service path ===
       const serviceData = {
         serviceType: tipo === 'Otros' ? tipoCustom : tipo,
-        scheduledDate: new Date(serviceDate).toISOString(),
+        scheduledDate: new Date(serviceDate + 'T12:00:00').toISOString(),
         notes: descripcion || null,
         farmId: selectedFarmId,
         divisionId: selectedDivisionId || null,
@@ -525,7 +525,7 @@ export default function ServiceModal({
 
       // Herrado → assign brand to each selected animal
       if (!service && tipo === 'Herrado' && selectedBrandId) {
-        const brandedAtIso = brandedAt ? new Date(brandedAt).toISOString() : new Date(serviceDate).toISOString();
+        const brandedAtIso = brandedAt ? new Date(brandedAt + 'T12:00:00').toISOString() : new Date(serviceDate + 'T12:00:00').toISOString();
         for (const animalId of selectedAnimalIds) {
           await animalsAPI.assignBrand(animalId, { brandId: selectedBrandId, brandedAt: brandedAtIso });
         }
@@ -533,7 +533,7 @@ export default function ServiceModal({
 
       // Pesaje → create RegistroPeso events
       if (!service && tipo === 'Pesaje' && weightKg && parseFloat(weightKg) > 0) {
-        const eventDate = new Date(serviceDate).toISOString();
+        const eventDate = new Date(serviceDate + 'T12:00:00').toISOString();
         const weight = parseFloat(weightKg);
         for (const animalId of selectedAnimalIds) {
           await animalEventsAPI.createEvent({
@@ -877,11 +877,18 @@ export default function ServiceModal({
             <input
               type="date"
               value={serviceDate}
-              onChange={(e) => setServiceDate(e.target.value)}
-              max={new Date().toISOString().split('T')[0]}
+              onChange={(e) => {
+                const val = e.target.value;
+                setServiceDate(val);
+                if (val > new Date().toISOString().split('T')[0]) {
+                  setServiceStatus('Pendiente');
+                }
+              }}
               className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
             />
-            <p className="text-xs text-gray-500 mt-1">Los servicios se registran como ya ejecutados</p>
+            {serviceDate > new Date().toISOString().split('T')[0] && (
+              <p className="text-xs text-amber-600 mt-1">Fecha futura — el servicio quedará como Pendiente hasta que sea ejecutado.</p>
+            )}
           </div>
 
           {/* Descripción */}
@@ -1005,9 +1012,10 @@ export default function ServiceModal({
                 <button
                   type="button"
                   onClick={() => setServiceStatus('Completado')}
+                  disabled={serviceDate > new Date().toISOString().split('T')[0]}
                   className={`flex-1 py-2.5 text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
                     serviceStatus === 'Completado' ? 'text-white' : 'text-gray-600 hover:bg-gray-50'
-                  }`}
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
                   style={serviceStatus === 'Completado' ? { backgroundColor: '#3FA79F' } : {}}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1029,9 +1037,11 @@ export default function ServiceModal({
                 </button>
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                {serviceStatus === 'Completado'
-                  ? 'El servicio ya fue ejecutado y quedará cerrado.'
-                  : 'El servicio está programado pero aún no se ha ejecutado.'}
+                {serviceDate > new Date().toISOString().split('T')[0]
+                  ? 'Fecha futura — solo se puede registrar como Pendiente.'
+                  : serviceStatus === 'Completado'
+                    ? 'El servicio ya fue ejecutado y quedará cerrado.'
+                    : 'El servicio está programado pero aún no se ha ejecutado.'}
               </p>
             </div>
           )}

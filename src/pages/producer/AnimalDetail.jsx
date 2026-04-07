@@ -62,7 +62,7 @@ function EventDetailPanel({ event, animalId, onClose, onUpdated, onDeleted }) {
       }
 
       await animalEventsAPI.updateEvent(animalId, event.eventId, {
-        eventDate:   new Date(formData.eventDate).toISOString(),
+        eventDate:   new Date(formData.eventDate + 'T12:00:00').toISOString(),
         description: encodedDescription,
         cost:        formData.cost ? parseFloat(formData.cost) : null,
         workerId:    null,
@@ -648,6 +648,159 @@ function PhotoUpdateModal({ animalId, currentUrl, onClose, onUpdated }) {
   );
 }
 
+// ── Parto Performance Chart ───────────────────────────────────────────────────
+const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+function PartoBarChart({ items, highlightIndex, labelKey, countKey }) {
+  const BAR_W = 28;
+  const GAP   = 10;
+  const H     = 80;
+  const maxCount = Math.max(...items.map(i => i[countKey]), 1);
+  const svgW  = items.length * (BAR_W + GAP) + GAP;
+
+  return (
+    <div className="overflow-x-auto">
+      <svg width={Math.max(svgW, 200)} height={H + 28} className="overflow-visible">
+        {items.map((item, i) => {
+          const count = item[countKey];
+          const barH  = count > 0 ? Math.max(6, Math.round((count / maxCount) * H)) : 0;
+          const x     = GAP + i * (BAR_W + GAP);
+          const y     = H - barH;
+          const isHL  = i === highlightIndex;
+          return (
+            <g key={item[labelKey]}>
+              {count === 0 ? (
+                <rect x={x} y={H - 3} width={BAR_W} height={3} rx={2} fill="#F1F5F9" />
+              ) : (
+                <rect x={x} y={y} width={BAR_W} height={barH} rx={4} fill={isHL ? '#3FA79F' : '#94D5D0'} />
+              )}
+              {count > 0 && (
+                <text x={x + BAR_W / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight="700" fill={isHL ? '#3FA79F' : '#64748B'}>
+                  {count}
+                </text>
+              )}
+              <text x={x + BAR_W / 2} y={H + 16} textAnchor="middle" fontSize={9} fill={isHL ? '#3FA79F' : '#94A3B8'} fontWeight={isHL ? '700' : '400'}>
+                {item[labelKey]}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function PartoPerformanceChart({ rawEvents }) {
+  const [view, setView] = useState('year'); // 'year' | 'all'
+
+  const partoEvents = rawEvents
+    .filter(e => e.eventType === 'Otro' && typeof e.description === 'string' && e.description.startsWith('Parto |'))
+    .map(e => new Date(e.eventDate || e.date))
+    .filter(d => !isNaN(d))
+    .sort((a, b) => a - b);
+
+  if (partoEvents.length === 0) return null;
+
+  const currentYear  = new Date().getFullYear();
+  const currentMonth = new Date().getMonth(); // 0-based
+
+  // ── Vista: este año por mes ──────────────────────────────────────────────
+  const byMonth = Array.from({ length: 12 }, (_, m) => ({
+    label: MESES_CORTOS[m],
+    month: m,
+    count: partoEvents.filter(d => d.getFullYear() === currentYear && d.getMonth() === m).length,
+  }));
+  const thisYearCount = byMonth.reduce((s, m) => s + m.count, 0);
+
+  // ── Vista: todos los años ────────────────────────────────────────────────
+  const yearSet = [...new Set(partoEvents.map(d => d.getFullYear()))].sort((a, b) => a - b);
+  const byYear  = yearSet.map(y => ({
+    label: String(y),
+    year:  y,
+    count: partoEvents.filter(d => d.getFullYear() === y).length,
+  }));
+  const currentYearIdx = byYear.findIndex(y => y.year === currentYear);
+
+  // ── Interval stats (global, based on all partos) ─────────────────────────
+  let avgMonths = null, minMonths = null, maxMonths = null;
+  if (partoEvents.length >= 2) {
+    const intervals = [];
+    for (let i = 1; i < partoEvents.length; i++) {
+      intervals.push((partoEvents[i] - partoEvents[i - 1]) / (1000 * 60 * 60 * 24 * 30.44));
+    }
+    avgMonths = Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length);
+    minMonths = Math.round(Math.min(...intervals));
+    maxMonths = Math.round(Math.max(...intervals));
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">Desempeño Reproductivo</p>
+          <p className="text-xs text-gray-500">
+            {view === 'year' ? `Partos en ${currentYear}` : 'Partos por año'}
+          </p>
+        </div>
+        {/* Switch */}
+        <div className="flex items-center rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
+          <button
+            onClick={() => setView('year')}
+            className={`px-3 py-1.5 transition-colors ${view === 'year' ? 'text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+            style={view === 'year' ? { backgroundColor: '#3FA79F' } : {}}
+          >
+            {currentYear}
+          </button>
+          <button
+            onClick={() => setView('all')}
+            className={`px-3 py-1.5 border-l border-gray-200 transition-colors ${view === 'all' ? 'text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+            style={view === 'all' ? { backgroundColor: '#3FA79F' } : {}}
+          >
+            Histórico
+          </button>
+        </div>
+      </div>
+
+      {/* Stat pill */}
+      <p className="text-2xl font-bold mb-3" style={{ color: '#3FA79F' }}>
+        {view === 'year' ? thisYearCount : partoEvents.length}
+        <span className="text-sm font-normal text-gray-400 ml-1">
+          {view === 'year' ? 'partos este año' : 'partos en total'}
+        </span>
+      </p>
+
+      {/* Chart */}
+      {view === 'year' ? (
+        <PartoBarChart items={byMonth} highlightIndex={currentMonth} labelKey="label" countKey="count" />
+      ) : (
+        <PartoBarChart items={byYear} highlightIndex={currentYearIdx} labelKey="label" countKey="count" />
+      )}
+
+      {/* Interval stats */}
+      {avgMonths !== null && (
+        <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-3 gap-2 text-center">
+          <div>
+            <p className="text-sm font-bold text-gray-800">{avgMonths}m</p>
+            <p className="text-xs text-gray-400">intervalo prom.</p>
+          </div>
+          <div>
+            <p className="text-sm font-bold text-gray-800">{minMonths}m</p>
+            <p className="text-xs text-gray-400">mín.</p>
+          </div>
+          <div>
+            <p className="text-sm font-bold text-gray-800">{maxMonths}m</p>
+            <p className="text-xs text-gray-400">máx.</p>
+          </div>
+        </div>
+      )}
+      {partoEvents.length === 1 && (
+        <p className="mt-2 text-xs text-gray-400 text-center">Registra más partos para ver el intervalo promedio.</p>
+      )}
+    </div>
+  );
+}
+
 export default function AnimalDetail() {
   const { animalId } = useParams();
   const navigate = useNavigate();
@@ -1007,33 +1160,51 @@ export default function AnimalDetail() {
                     {animal.breed}{animal.color ? ` · ${animal.color}` : ''}
                   </p>
                   <div className="flex flex-wrap gap-1.5 items-center">
-                    {animal.tagNumber ? (
-                      <span className="px-2 py-0.5 bg-gray-50 text-gray-700 font-mono rounded border border-gray-200 text-xs font-medium">
-                        #{animal.tagNumber}
-                      </span>
-                    ) : assigningTag ? (
+                    {assigningTag ? (
+                      <div className="flex flex-col gap-1">
+                        {animal.tagNumber && (
+                          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                            ⚠ Estás cambiando un arete ya asignado. El número de arete es un registro único — asegúrate de que el nuevo valor es correcto.
+                          </p>
+                        )}
+                        <div className="flex items-center gap-1">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={tagInput}
+                            onChange={e => setTagInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') handleAssignTag(); if (e.key === 'Escape') { setAssigningTag(false); setTagInput(''); } }}
+                            placeholder="Ej: A001"
+                            className="w-24 px-2 py-0.5 text-xs border border-[#3FA79F] rounded font-mono focus:outline-none focus:ring-1 focus:ring-[#3FA79F]"
+                            disabled={savingTag}
+                          />
+                          <button
+                            onClick={handleAssignTag}
+                            disabled={savingTag || !tagInput.trim()}
+                            className="px-2 py-0.5 bg-[#3FA79F] text-white text-xs rounded hover:bg-[#35918A] disabled:opacity-50 transition-colors"
+                          >
+                            {savingTag ? '...' : 'Guardar'}
+                          </button>
+                          <button
+                            onClick={() => { setAssigningTag(false); setTagInput(''); }}
+                            className="px-1.5 py-0.5 text-gray-400 hover:text-gray-600 text-xs"
+                          >✕</button>
+                        </div>
+                      </div>
+                    ) : animal.tagNumber ? (
                       <div className="flex items-center gap-1">
-                        <input
-                          autoFocus
-                          type="text"
-                          value={tagInput}
-                          onChange={e => setTagInput(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') handleAssignTag(); if (e.key === 'Escape') { setAssigningTag(false); setTagInput(''); } }}
-                          placeholder="Ej: A001"
-                          className="w-24 px-2 py-0.5 text-xs border border-[#3FA79F] rounded font-mono focus:outline-none focus:ring-1 focus:ring-[#3FA79F]"
-                          disabled={savingTag}
-                        />
+                        <span className="px-2 py-0.5 bg-gray-50 text-gray-700 font-mono rounded border border-gray-200 text-xs font-medium">
+                          #{animal.tagNumber}
+                        </span>
                         <button
-                          onClick={handleAssignTag}
-                          disabled={savingTag || !tagInput.trim()}
-                          className="px-2 py-0.5 bg-[#3FA79F] text-white text-xs rounded hover:bg-[#35918A] disabled:opacity-50 transition-colors"
+                          onClick={() => { setTagInput(animal.tagNumber); setAssigningTag(true); }}
+                          title="Editar arete"
+                          className="p-0.5 text-gray-400 hover:text-gray-600 transition-colors"
                         >
-                          {savingTag ? '...' : 'Guardar'}
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
                         </button>
-                        <button
-                          onClick={() => { setAssigningTag(false); setTagInput(''); }}
-                          className="px-1.5 py-0.5 text-gray-400 hover:text-gray-600 text-xs"
-                        >✕</button>
                       </div>
                     ) : (
                       <button
@@ -1244,6 +1415,11 @@ export default function AnimalDetail() {
             </div>
           )}
         </div>
+
+        {/* Parto performance chart — hembras con al menos 1 parto */}
+        {animal.sex !== 'Macho' && animal.offspringCount > 0 && (
+          <PartoPerformanceChart rawEvents={rawEvents} />
+        )}
 
         {/* Genealogy — navigate to dedicated page */}
         {(() => {

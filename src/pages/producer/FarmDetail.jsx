@@ -4,6 +4,7 @@ import { format, isValid, startOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import ProducerLayout from '../../components/layout/ProducerLayout';
 import DivisionModal from '../../components/producer/DivisionModal';
+import DivisionDetailModal from '../../components/producer/DivisionDetailModal';
 import EventModal from '../../components/producer/EventModal';
 import MovimientoModal from '../../components/producer/MovimientoModal';
 import AnimalModal from '../../components/producer/AnimalModal';
@@ -52,6 +53,7 @@ export default function FarmDetail() {
   // Modals
   const [showDivisionModal, setShowDivisionModal] = useState(false);
   const [editingDivision, setEditingDivision] = useState(null);
+  const [selectedDivision, setSelectedDivision] = useState(null);
   const [showEventModal, setShowEventModal] = useState(false);
   const [showMovimientoModal, setShowMovimientoModal] = useState(false);
   const [showAnimalModal, setShowAnimalModal] = useState(false);
@@ -250,6 +252,14 @@ export default function FarmDetail() {
         farmId={farmId}
         division={editingDivision}
         onDivisionSaved={fetchAllData}
+      />
+      <DivisionDetailModal
+        isOpen={!!selectedDivision}
+        onClose={() => setSelectedDivision(null)}
+        division={selectedDivision}
+        animals={animals}
+        farmId={farmId}
+        onDivisionRenamed={fetchAllData}
       />
       <EventModal
         isOpen={showEventModal}
@@ -574,7 +584,7 @@ export default function FarmDetail() {
 
           {/* Divisions */}
           <div className="md:col-span-2 bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Divisiones ({divisions.length})</h3>
               <button onClick={() => setShowDivisionModal(true)} className="text-xs font-medium flex items-center gap-1 hover:underline" style={{ color: '#3FA79F' }}>
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -583,6 +593,10 @@ export default function FarmDetail() {
                 Agregar
               </button>
             </div>
+
+            <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+              Son las zonas en las que se divide una finca. Se suele separar a los animales en divisiones para que el pasto se recupere, o para ordenar a los animales.
+            </p>
 
             {divisions.length === 0 ? (
               <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-100">
@@ -599,8 +613,12 @@ export default function FarmDetail() {
                   return (
                     <div
                       key={d.id}
-                      className={`group relative border rounded-lg p-3 cursor-pointer transition-colors hover:border-gray-300 ${overloaded ? 'border-amber-300 bg-amber-50/30' : 'border-gray-200'}`}
-                      onClick={() => navigate(`/producer/animales?divisionId=${d.id}&farmId=${farmId}`)}
+                      className={`group relative border rounded-lg p-3 cursor-pointer transition-all duration-150 hover:shadow-sm ${
+                        overloaded
+                          ? 'border-amber-300 bg-amber-50/30 hover:border-amber-400'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/60'
+                      }`}
+                      onClick={() => setSelectedDivision(d)}
                     >
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex-1 min-w-0">
@@ -617,6 +635,7 @@ export default function FarmDetail() {
                           <button
                             onClick={e => { e.stopPropagation(); setEditingDivision(d); setShowDivisionModal(true); }}
                             className="p-1 text-gray-400 hover:text-gray-700 transition-colors"
+                            title="Editar división"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -625,6 +644,7 @@ export default function FarmDetail() {
                           <button
                             onClick={e => { e.stopPropagation(); handleDeleteDivision(d.id); }}
                             className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                            title="Eliminar división"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -633,13 +653,24 @@ export default function FarmDetail() {
                         </div>
                       </div>
                       {pct !== null && (
-                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-2">
                           <div
                             className={`h-full rounded-full transition-all ${overloaded ? 'bg-amber-400' : 'bg-emerald-400'}`}
                             style={{ width: `${pct}%` }}
                           />
                         </div>
                       )}
+                      <div className="flex items-center justify-end pt-0.5">
+                        <span
+                          className="flex items-center gap-1 text-xs font-semibold transition-colors duration-150 group-hover:underline"
+                          style={{ color: '#3FA79F' }}
+                        >
+                          Ver división
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </span>
+                      </div>
                     </div>
                   );
                 })}

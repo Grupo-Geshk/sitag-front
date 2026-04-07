@@ -1,28 +1,358 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { animalsAPI } from '../../api/animals';
 import { animalEventsAPI } from '../../api/animalEvents';
 import { farmsAPI } from '../../api/farms';
 import { divisionsAPI } from '../../api/divisions';
 import { getProducerId } from '../../lib/auth';
+import { uploadToImgbb } from '../../lib/imgbb';
 import Modal from '../common/Modal';
+import BreedCombobox from './BreedCombobox';
 
-export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
+// ── Weaning question helper ────────────────────────────────────────────────────
+// Renders a yes/no toggle asking whether the animal is already weaned.
+// Only appears for Compra and Otros origins (not Parto — newborns are never weaned).
+function WeaningQuestion({ value, onChange }) {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+      <div>
+        <p className="text-sm font-semibold text-amber-800">¿El animal ya fue destetado?</p>
+        <p className="text-xs text-amber-700 mt-1">
+          Esta información determina si el evento de Destete estará disponible en el
+          historial del animal. Si el animal ingresa ya destetado, el evento quedará
+          registrado automáticamente.
+        </p>
+      </div>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => onChange(true)}
+          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+            value === true
+              ? 'border-[#3FA79F] bg-teal-50 text-teal-800'
+              : 'border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+          }`}
+        >
+          Sí, ya está destetado
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange(false)}
+          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+            value === false
+              ? 'border-[#3FA79F] bg-teal-50 text-teal-800'
+              : 'border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+          }`}
+        >
+          No, aún no
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Inline photo upload field ──────────────────────────────────────────────────
+// Handles file selection, local preview, ImgBB upload and passes the final URL up.
+// The URL is stored in formData.photoUrl and sent with the animal on submit.
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10 MB
+
+function CameraOverlay({ onCapture, onClose }) {
+  const videoRef  = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const [ready, setReady]           = useState(false);
+  const [camError, setCamError]     = useState(null);
+  const [facingMode, setFacingMode] = useState('environment');
+
+  const startStream = async (facing) => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    setReady(false);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+    } catch {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      } catch (err) {
+        setCamError('No se pudo acceder a la cámara. Verifica los permisos.');
+        console.error(err);
+      }
+    }
+  };
+
+  useEffect(() => { startStream(facingMode); return () => streamRef.current?.getTracks().forEach(t => t.stop()); }, [facingMode]);
+
+  const handleCapture = () => {
+    const video = videoRef.current; const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      onCapture(new File([blob], `foto-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+    }, 'image/jpeg', 0.92);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-black flex flex-col">
+      <div className="flex-1 relative overflow-hidden">
+        {camError ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-white">
+            <svg className="w-10 h-10 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.069A1 1 0 0121 8.882v6.236a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+            </svg>
+            <p className="text-sm text-center text-red-300">{camError}</p>
+          </div>
+        ) : (
+          <video ref={videoRef} autoPlay playsInline muted onCanPlay={() => setReady(true)}
+            className="w-full h-full object-cover"
+            style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }} />
+        )}
+        <canvas ref={canvasRef} className="hidden" />
+        <div className="absolute top-0 inset-x-0 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/60 to-transparent">
+          <button type="button" onClick={() => { streamRef.current?.getTracks().forEach(t => t.stop()); onClose(); }}
+            className="flex items-center gap-1.5 text-white/90 hover:text-white text-sm font-medium">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Cancelar
+          </button>
+          <button type="button" onClick={() => setFacingMode(p => p === 'environment' ? 'user' : 'environment')}
+            className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div className="flex items-center justify-center py-8 bg-black">
+        <button type="button" onClick={handleCapture} disabled={!ready || !!camError}
+          className="w-16 h-16 rounded-full border-4 border-white bg-white/20 hover:bg-white/30 disabled:opacity-40 transition-all flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-white" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PhotoUploadField({ value, onChange, disabled }) {
+  const [file, setFile]             = useState(null);
+  const [localUrl, setLocalUrl]     = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploading, setUploading]   = useState(false);
+  const [error, setError]           = useState(null);
+  const [showCamera, setShowCamera] = useState(false);
+  const inputRef = useRef(null);
+
+  // Clean up object URL on unmount or when file changes
+  useEffect(() => () => { if (localUrl) URL.revokeObjectURL(localUrl); }, [localUrl]);
+
+  const applyFile = (f) => {
+    setError(null);
+    if (!f.type.startsWith('image/')) { setError('Solo se permiten imágenes (JPG, PNG, WEBP…).'); return; }
+    if (f.size > MAX_PHOTO_BYTES)     { setError('La imagen no puede superar 10 MB.'); return; }
+    if (localUrl) URL.revokeObjectURL(localUrl);
+    setFile(f);
+    setLocalUrl(URL.createObjectURL(f));
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) applyFile(f);
+  };
+
+  const clearFile = () => {
+    if (localUrl) URL.revokeObjectURL(localUrl);
+    setFile(null);
+    setLocalUrl(null);
+    setError(null);
+  };
+
+  const handleUpload = async () => {
+    if (!file || uploading) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const { url } = await uploadToImgbb(file);
+      onChange(url);   // store URL in formData.photoUrl
+      clearFile();     // clear local state — the preview will switch to "uploaded" view
+    } catch (err) {
+      setError(err.message || 'Error al subir la imagen.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ── Uploaded state: show thumbnail + "Quitar" ─────────────────────────────
+  if (value && !file) {
+    return (
+      <div className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-100 rounded-xl">
+        <img
+          src={value}
+          alt="Foto del animal"
+          className="w-12 h-12 rounded-lg object-cover flex-shrink-0 border border-gray-200"
+          onError={e => { e.target.style.display = 'none'; }}
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-gray-700">Foto cargada en ImgBB</p>
+          <p className="text-xs text-gray-400 truncate">{value}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          disabled={disabled}
+          className="text-xs font-medium text-red-500 hover:text-red-600 flex-shrink-0 disabled:opacity-40 transition-colors"
+        >
+          Quitar
+        </button>
+      </div>
+    );
+  }
+
+  // ── File selected: show preview + upload button ────────────────────────────
+  if (file && localUrl) {
+    return (
+      <div className="space-y-2">
+        <div className="relative rounded-xl overflow-hidden bg-gray-50 border border-gray-100">
+          <img src={localUrl} alt="Vista previa" className="w-full h-36 object-contain" />
+          {!uploading && (
+            <button
+              type="button"
+              onClick={clearFile}
+              className="absolute top-2 right-2 w-6 h-6 bg-white/90 rounded-full shadow-sm flex items-center justify-center text-gray-500 hover:text-red-500 transition-colors"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+        {error && (
+          <p className="text-xs text-red-600">{error}</p>
+        )}
+        <button
+          type="button"
+          onClick={handleUpload}
+          disabled={uploading || disabled}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 transition-all hover:opacity-90"
+          style={{ backgroundColor: '#3FA79F' }}
+        >
+          {uploading ? (
+            <>
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              Subiendo a ImgBB…
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+              </svg>
+              Subir foto
+            </>
+          )}
+        </button>
+      </div>
+    );
+  }
+
+  // ── Empty state: drag-and-drop zone + camera button ──────────────────────
+  return (
+    <>
+      {showCamera && (
+        <CameraOverlay
+          onCapture={f => { setShowCamera(false); applyFile(f); }}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
+      <div className="space-y-2">
+        <div
+          onDragOver={e => { e.preventDefault(); if (!disabled) setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => !disabled && inputRef.current?.click()}
+          className={`flex flex-col items-center justify-center gap-1.5 h-24 rounded-xl border-2 border-dashed transition-colors ${
+            disabled
+              ? 'opacity-50 cursor-not-allowed border-gray-200 bg-gray-50'
+              : isDragging
+                ? 'border-teal-400 bg-teal-50 cursor-copy'
+                : 'border-gray-200 bg-gray-50 hover:border-teal-300 hover:bg-teal-50/40 cursor-pointer'
+          }`}
+        >
+          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          </svg>
+          <p className="text-sm font-medium text-gray-600">Arrastra una imagen o haz clic</p>
+          <p className="text-xs text-gray-400">JPG, PNG, WEBP · máx. 10 MB · opcional</p>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) applyFile(f); e.target.value = ''; }}
+          />
+        </div>
+
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setShowCamera(true)}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 transition-colors"
+        >
+          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.75}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Tomar foto con cámara
+        </button>
+
+        {error && <p className="text-xs text-red-600">{error}</p>}
+      </div>
+    </>
+  );
+}
+
+export default function AnimalModal({
+  isOpen,
+  onClose,
+  onAnimalCreated,
+  // Optional: pre-fill data passed from Parto workflow in EventModal
+  initialData = null,
+}) {
   const [loading, setLoading] = useState(false);
   const [farms, setFarms] = useState([]);
   const [divisions, setDivisions] = useState([]);
+  const [birthDateDisplay, setBirthDateDisplay] = useState('');
+  const datePickerRef = useRef(null);
+  // null = question not yet answered; true/false = user's response
+  const [isWeaned, setIsWeaned] = useState(null);
   const [formData, setFormData] = useState({
     origin: '', // Parto, Compra, Otros
     tagNumber: '',
     name: '',
     sex: 'Hembra',
     breed: '',
+    color: '',
     birthDate: '',
     birthWeight: '',
     farmId: '',
     divisionId: '',
     fatherId: '',
     motherId: '',
+    motherRef: '',   // Free-text external mother (when not in system)
+    fatherRef: '',   // Free-text external father (when not in system)
+    photoUrl: '',    // IMGBB URL for current photo
     // Economy fields for Compra
     transactionAmount: '',
     transactionCategory: 'Ganado',
@@ -43,6 +373,21 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
       fetchFarms();
     }
   }, [isOpen]);
+
+  // Apply initialData (e.g. from Parto workflow) when modal opens
+  useEffect(() => {
+    if (!isOpen || !initialData) return;
+    setFormData(prev => ({
+      ...prev,
+      ...(initialData.origin     ? { origin:     initialData.origin }     : {}),
+      ...(initialData.motherId   ? { motherId:   initialData.motherId }   : {}),
+      ...(initialData.farmId     ? { farmId:     initialData.farmId }     : {}),
+      ...(initialData.divisionId ? { divisionId: initialData.divisionId } : {}),
+    }));
+    if (initialData.selectedMother) {
+      setSelectedMother(initialData.selectedMother);
+    }
+  }, [isOpen, initialData]);
 
   useEffect(() => {
     if (formData.farmId) {
@@ -96,22 +441,50 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value,
-    }));
+    if (name === 'origin') {
+      setIsWeaned(null); // reset weaning answer when origin changes
+    }
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // ── Birth date handlers ────────────────────────────────────────────────────
+  // Accepts DD/MM/AAAA typed by the user; syncs ISO value into formData.
+  const handleBirthDateText = (e) => {
+    const raw = e.target.value;
+    setBirthDateDisplay(raw);
+    const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (match) {
+      const [, dd, mm, yyyy] = match;
+      const iso = `${yyyy}-${mm}-${dd}`;
+      const d = new Date(iso);
+      if (!isNaN(d) && d <= new Date()) {
+        setFormData(prev => ({ ...prev, birthDate: iso }));
+      }
+    } else if (raw === '') {
+      setFormData(prev => ({ ...prev, birthDate: '' }));
+    }
+  };
+
+  // Syncs calendar picker value back to the text display.
+  const handleDatePickerChange = (e) => {
+    const iso = e.target.value; // YYYY-MM-DD
+    setFormData(prev => ({ ...prev, birthDate: iso }));
+    if (iso) {
+      const [yyyy, mm, dd] = iso.split('-');
+      setBirthDateDisplay(`${dd}/${mm}/${yyyy}`);
+    }
   };
 
   const handleMotherSelect = (animal) => {
     setSelectedMother(animal);
-    setFormData(prev => ({ ...prev, motherId: animal.id.toString() }));
+    setFormData(prev => ({ ...prev, motherId: animal.id }));
     setMotherSearch('');
     setShowMotherDropdown(false);
   };
 
   const handleFatherSelect = (animal) => {
     setSelectedFather(animal);
-    setFormData(prev => ({ ...prev, fatherId: animal.id.toString() }));
+    setFormData(prev => ({ ...prev, fatherId: animal.id }));
     setFatherSearch('');
     setShowFatherDropdown(false);
   };
@@ -161,6 +534,8 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
         }
       }
 
+      let createdAnimal;
+
       // If origin is Compra, use atomic endpoint
       if (formData.origin === 'Compra') {
         const purchaseData = {
@@ -168,16 +543,17 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
           name: formData.name || null,
           sex: formData.sex,
           breed: formData.breed,
-          birthDate: formData.birthDate,
-          birthWeight: parseFloat(formData.birthWeight),
-          farmId: parseInt(formData.farmId),
-          divisionId: formData.divisionId ? parseInt(formData.divisionId) : null,
-          amount: parseFloat(formData.transactionAmount),
-          category: formData.transactionCategory,
-          transactionDescription: formData.transactionDescription || null,
+          color: formData.color?.trim() || null,
+          birthDate: formData.birthDate || null,
+          weight: formData.birthWeight ? parseFloat(formData.birthWeight) : null,
+          farmId: formData.farmId,
+          divisionId: formData.divisionId || null,
+          purchasePrice: parseFloat(formData.transactionAmount),
+          purchaseDate: new Date().toISOString(),
+          categoryName: formData.transactionCategory || null,
         };
 
-        await animalsAPI.createAnimalWithPurchase(purchaseData);
+        createdAnimal = await animalsAPI.createAnimalWithPurchase(purchaseData);
         toast.success('¡Animal registrado exitosamente! Transacción económica creada.');
       } else {
         // For Parto or Otros, use regular endpoint
@@ -186,16 +562,43 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
           name: formData.name || null,
           sex: formData.sex,
           breed: formData.breed,
-          birthDate: formData.birthDate,
-          birthWeight: parseFloat(formData.birthWeight),
-          farmId: parseInt(formData.farmId),
-          divisionId: formData.divisionId ? parseInt(formData.divisionId) : null,
-          fatherId: formData.fatherId ? parseInt(formData.fatherId) : null,
-          motherId: formData.motherId ? parseInt(formData.motherId) : null,
+          color: formData.color?.trim() || null,
+          birthDate: formData.birthDate || null,
+          weight: formData.birthWeight ? parseFloat(formData.birthWeight) : null,
+          farmId: formData.farmId,
+          divisionId: formData.divisionId || null,
+          // Genealogy — mother
+          motherId:  formData.motherId  || null,
+          motherRef: formData.motherRef?.trim() || null,
+          // Genealogy — father (now persisted)
+          fatherId:  formData.fatherId  || null,
+          fatherRef: formData.fatherRef?.trim() || null,
+          // Photo
+          photoUrl:  formData.photoUrl?.trim()  || null,
+          // Legacy alias for old backend fallback (same value as motherId)
+          parentId:  formData.motherId  || null,
         };
 
-        await animalsAPI.createAnimal(animalData);
+        createdAnimal = await animalsAPI.createAnimal(animalData);
         toast.success('¡Animal registrado exitosamente!');
+      }
+
+      // If the user confirmed the animal is already weaned (Compra or Otros only),
+      // create a Destete event so the option does not reappear in the event modal.
+      const needsWeaningEvent = isWeaned === true
+        && createdAnimal?.id
+        && (formData.origin === 'Compra' || formData.origin === 'Otros');
+
+      if (needsWeaningEvent) {
+        await animalEventsAPI.createEvent({
+          animalId:    createdAnimal.id,
+          eventType:   'Otro',
+          recordType:  'event',
+          eventDate:   formData.birthDate
+            ? new Date(formData.birthDate + 'T12:00:00').toISOString()
+            : new Date().toISOString(),
+          description: 'Destete | Animal registrado como ya destetado al ingresar al sistema',
+        }).catch(err => console.warn('Destete event creation failed (non-fatal):', err));
       }
 
       onAnimalCreated();
@@ -208,16 +611,22 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
         name: '',
         sex: 'Hembra',
         breed: '',
+        color: '',
         birthDate: '',
         birthWeight: '',
         farmId: '',
         divisionId: '',
         fatherId: '',
         motherId: '',
+        motherRef: '',
+        fatherRef: '',
+        photoUrl: '',
         transactionAmount: '',
         transactionCategory: 'Ganado',
         transactionDescription: '',
       });
+      setIsWeaned(null);
+      setBirthDateDisplay('');
 
       // Reset genealogy search state
       setSelectedMother(null);
@@ -228,10 +637,14 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
       setShowFatherDropdown(false);
     } catch (error) {
       console.error('Create animal error:', error);
-      const errorMessage =
+      const rawMessage =
         error.response?.data?.message ||
         error.response?.data?.errors?.[Object.keys(error.response?.data?.errors || {})[0]]?.[0] ||
-        'Error al registrar el animal';
+        '';
+      const isLimitError = rawMessage.toLowerCase().includes('límite de animales') || rawMessage.toLowerCase().includes('limite de animales');
+      const errorMessage = isLimitError
+        ? 'Has alcanzado el límite de animales activos de tu plan. Marca animales como vendidos o muertos para liberar cupo, o actualiza tu plan.'
+        : rawMessage || 'Error al registrar el animal';
       toast.error(errorMessage);
     } finally {
       setLoading(false);
@@ -346,6 +759,11 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
                   </div>
                 </div>
               )}
+
+              {/* Weaning question for Compra and Otros */}
+              {(formData.origin === 'Compra' || formData.origin === 'Otros') && (
+                <WeaningQuestion value={isWeaned} onChange={setIsWeaned} />
+              )}
             </div>
           </div>
 
@@ -356,21 +774,22 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
               {/* Tag Number */}
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-800">
-                  Número de Arete / Chapeta *
+                  Número de Arete / Chapeta
+                  <span className="ml-1.5 text-xs font-normal text-gray-400">(opcional)</span>
                 </label>
                 <input
                   type="text"
                   name="tagNumber"
                   value={formData.tagNumber}
                   onChange={handleChange}
-                  required
                   disabled={loading}
-                  placeholder="Ej: A001, BOV-123"
+                  placeholder="Ej: A001, BOV-123 — o dejar vacío"
                   className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-20 transition-all disabled:opacity-50 font-mono"
                   style={{ borderColor: '#E2E8F0' }}
                   onFocus={(e) => (e.target.style.borderColor = '#3FA79F')}
                   onBlur={(e) => (e.target.style.borderColor = '#E2E8F0')}
                 />
+                <p className="text-xs text-gray-400">Puedes asignar el arete más adelante desde el perfil del animal.</p>
               </div>
 
               {/* Name */}
@@ -418,39 +837,91 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
                 <label className="block text-sm font-medium text-gray-800">
                   Raza *
                 </label>
-                <input
-                  type="text"
-                  name="breed"
+                <BreedCombobox
                   value={formData.breed}
-                  onChange={handleChange}
+                  onChange={(val) => setFormData(prev => ({ ...prev, breed: val }))}
                   required
                   disabled={loading}
-                  placeholder="Ej: Holstein, Brahman, Simmental"
-                  className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-20 transition-all disabled:opacity-50"
-                  style={{ borderColor: '#E2E8F0' }}
-                  onFocus={(e) => (e.target.style.borderColor = '#3FA79F')}
-                  onBlur={(e) => (e.target.style.borderColor = '#E2E8F0')}
+                  inputClass="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#3FA79F] transition-all disabled:opacity-50 pr-8 text-sm"
+                />
+              </div>
+
+              {/* Color */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-800">
+                  Color / Pelaje
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Negro, Pinto, Colorado, Blanco..."
+                  value={formData.color}
+                  onChange={(e) => setFormData(prev => ({ ...prev, color: e.target.value }))}
+                  disabled={loading}
+                  maxLength={100}
+                  className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-[#3FA79F] transition-all disabled:opacity-50 text-sm"
                 />
               </div>
 
               {/* Birth Date */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-800">
-                  Fecha de Nacimiento *
-                </label>
-                <input
-                  type="date"
-                  name="birthDate"
-                  value={formData.birthDate}
-                  onChange={handleChange}
-                  required
-                  disabled={loading}
-                  max={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-20 transition-all disabled:opacity-50"
-                  style={{ borderColor: '#E2E8F0' }}
-                  onFocus={(e) => (e.target.style.borderColor = '#3FA79F')}
-                  onBlur={(e) => (e.target.style.borderColor = '#E2E8F0')}
-                />
+                <div className="flex items-center gap-1.5">
+                  <label className="block text-sm font-medium text-gray-800">
+                    Fecha de Nacimiento *
+                  </label>
+                  {/* Format tooltip */}
+                  <div className="relative group">
+                    <svg className="w-3.5 h-3.5 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-20">
+                      Escribe en formato DD/MM/AAAA
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative flex items-center">
+                  {/* Text input */}
+                  <input
+                    type="text"
+                    placeholder="DD/MM/AAAA"
+                    value={birthDateDisplay}
+                    onChange={handleBirthDateText}
+                    required
+                    disabled={loading}
+                    maxLength={10}
+                    className="w-full px-4 py-2.5 pr-10 bg-white border rounded-lg focus:outline-none transition-all disabled:opacity-50 text-sm"
+                    style={{ borderColor: '#E2E8F0' }}
+                    onFocus={(e) => (e.target.style.borderColor = '#3FA79F')}
+                    onBlur={(e) => (e.target.style.borderColor = '#E2E8F0')}
+                  />
+
+                  {/* Calendar icon button */}
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => datePickerRef.current?.showPicker()}
+                    className="absolute right-3 text-gray-400 hover:text-[#3FA79F] transition-colors disabled:opacity-50"
+                    tabIndex={-1}
+                    aria-label="Abrir calendario"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+
+                  {/* Hidden date picker */}
+                  <input
+                    ref={datePickerRef}
+                    type="date"
+                    value={formData.birthDate}
+                    onChange={handleDatePickerChange}
+                    max={new Date().toISOString().split('T')[0]}
+                    className="absolute inset-0 opacity-0 pointer-events-none w-full"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  />
+                </div>
               </div>
 
               {/* Birth Weight */}
@@ -560,7 +1031,9 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
                         disabled={loading}
                         className="px-3 py-2.5 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
                       >
-                        ✕
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
                       </button>
                     </div>
                   ) : (
@@ -653,7 +1126,9 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
                         disabled={loading}
                         className="px-3 py-2.5 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors disabled:opacity-50"
                       >
-                        ✕
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
                       </button>
                     </div>
                   ) : (
@@ -722,6 +1197,62 @@ export default function AnimalModal({ isOpen, onClose, onAnimalCreated }) {
                   )}
                 </div>
               </div>
+
+              {/* External parent references — shown when no in-system parent is selected */}
+              {formData.origin === 'Parto' && !selectedMother && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-800">
+                    Referencia de madre externa (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    name="motherRef"
+                    value={formData.motherRef}
+                    onChange={handleChange}
+                    disabled={loading}
+                    maxLength={200}
+                    placeholder="Ej: BOV-EXT-99, Brahman adquirida externamente"
+                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none transition-all disabled:opacity-50 text-sm"
+                    style={{ borderColor: '#E2E8F0' }}
+                    onFocus={(e) => (e.target.style.borderColor = '#3FA79F')}
+                    onBlur={(e) => (e.target.style.borderColor = '#E2E8F0')}
+                  />
+                  <p className="text-xs text-gray-400">Usa este campo cuando la madre no está registrada en el sistema.</p>
+                </div>
+              )}
+              {formData.origin === 'Parto' && !selectedFather && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-800">
+                    Referencia de padre externo (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    name="fatherRef"
+                    value={formData.fatherRef}
+                    onChange={handleChange}
+                    disabled={loading}
+                    maxLength={200}
+                    placeholder="Ej: Toro Brahman arrendado de Finca X"
+                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none transition-all disabled:opacity-50 text-sm"
+                    style={{ borderColor: '#E2E8F0' }}
+                    onFocus={(e) => (e.target.style.borderColor = '#3FA79F')}
+                    onBlur={(e) => (e.target.style.borderColor = '#E2E8F0')}
+                  />
+                  <p className="text-xs text-gray-400">Usa este campo cuando el padre no está registrado en el sistema.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Photo — optional, shown for all origins */}
+          {formData.origin && (
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Foto del Animal</h3>
+              <PhotoUploadField
+                value={formData.photoUrl}
+                onChange={(url) => setFormData(prev => ({ ...prev, photoUrl: url }))}
+                disabled={loading}
+              />
             </div>
           )}
 

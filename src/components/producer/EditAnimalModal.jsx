@@ -92,7 +92,7 @@ export default function EditAnimalModal({ isOpen, onClose, animal, onSaved }) {
       if (brandChanged || brandedAtChanged) {
         await animalsAPI.assignBrand(animal.id, {
           brandId: selectedBrandId || null,
-          brandedAt: brandedAt ? new Date(brandedAt).toISOString() : null,
+          brandedAt: brandedAt ? new Date(brandedAt + 'T12:00:00').toISOString() : null,
         });
       }
 
