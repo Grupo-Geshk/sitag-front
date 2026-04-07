@@ -960,7 +960,7 @@ export default function AnimalDetail() {
 
   const calculateAge = (birthDate) => {
     if (!birthDate) return 'Desconocida';
-    const diffMs   = Date.now() - new Date(birthDate).getTime();
+    const diffMs   = Date.now() - new Date(birthDate + 'T00:00:00').getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     if (diffDays < 30) return `${diffDays} ${diffDays === 1 ? 'día' : 'días'}`;
     const months = Math.floor(diffDays / 30.44);
@@ -1332,7 +1332,7 @@ export default function AnimalDetail() {
               <p className="text-xs text-gray-500 mb-0.5">Nacimiento</p>
               <p className="text-sm font-semibold text-gray-900">
                 {animal.birthDate
-                  ? new Date(animal.birthDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+                  ? new Date(animal.birthDate + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
                   : 'Desconocida'}
               </p>
               <p className="text-xs text-gray-600">Edad: {age}</p>
@@ -1350,7 +1350,7 @@ export default function AnimalDetail() {
                 <p className="text-sm font-semibold text-gray-900">{animal.offspringCount ?? 0}</p>
                 <p className="text-xs text-gray-600">
                   {animal.lastBirthDate
-                    ? `Último: ${new Date(animal.lastBirthDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}`
+                    ? `Último: ${new Date(animal.lastBirthDate + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}`
                     : 'Sin partos registrados'}
                 </p>
               </div>
@@ -1540,7 +1540,7 @@ export default function AnimalDetail() {
                       <p className="text-gray-500">Último parto</p>
                       <p className="text-gray-700">
                         {animal.lastBirthDate
-                          ? new Date(animal.lastBirthDate).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+                          ? new Date(animal.lastBirthDate + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
                           : 'Sin registros'}
                       </p>
                     </div>

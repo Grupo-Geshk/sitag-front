@@ -420,7 +420,7 @@ export default function ServiceModal({
   };
 
   const calculateAge = (birthDate) => {
-    const birth = new Date(birthDate);
+    const birth = new Date(birthDate + 'T00:00:00');
     const today = new Date();
     const months = (today.getFullYear() - birth.getFullYear()) * 12 + today.getMonth() - birth.getMonth();
     if (months < 12) return `${months} ${months === 1 ? 'mes' : 'meses'}`;

@@ -176,7 +176,7 @@ function isWeaningEligible(animal, existingEvents) {
   if (existingEvents?.length > 0 && hasWeaningEvent(existingEvents)) return false;
   // Fallback: infer from age — animals over 365 days are considered weaned
   if (animal.birthDate) {
-    const ageDays = (Date.now() - new Date(animal.birthDate).getTime()) / 86400000;
+    const ageDays = (Date.now() - new Date(animal.birthDate + 'T00:00:00').getTime()) / 86400000;
     if (ageDays > 365) return false;
   }
   return true;

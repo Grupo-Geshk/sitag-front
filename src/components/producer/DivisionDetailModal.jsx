@@ -6,7 +6,7 @@ import Modal from '../common/Modal';
 
 function calcAge(birthDate) {
   if (!birthDate) return '—';
-  const birth = new Date(birthDate);
+  const birth = new Date(birthDate + 'T00:00:00');
   if (isNaN(birth)) return '—';
   const now = new Date();
   const months =
